@@ -21,6 +21,7 @@ from db import DB
 from planner import Snapshot, plan as run_plan, validate_plan
 from seed import seed
 import branches as branches_mod
+import relay_link
 
 FRONTEND_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "frontend")
 DB_PATH = os.environ.get("EVAC_DB", os.path.join(os.path.dirname(os.path.abspath(__file__)),
@@ -623,11 +624,25 @@ class Handler(BaseHTTPRequestHandler):
                 if p == "/api/events":
                     return self._json(200, [dict(x) for x in db.conn.execute(
                         "SELECT * FROM event_log ORDER BY id DESC LIMIT 100")])
+
+                # ---- 出站执行包（供离线中继导入/现场下载）----
+                if p == "/api/execution-packages":
+                    from urllib.parse import parse_qs
+                    qs = parse_qs(u.query)
+                    status = qs.get("status", [None])[0]
+                    return self._json(200, {
+                        "batches": relay_link.list_execution_batches(db, status)})
+                if p.startswith("/api/execution-package/v1/"):
+                    bid = p.rsplit("/", 1)[-1]
+                    return self._json(200,
+                                      relay_link.build_execution_package(db, bid))
             if p.startswith("/api/"):
                 raise NotFound("未知接口")
             return self._static(p)
         except branches_mod.BranchError as e:
             self._json(e.status, {"error": str(e), "code": e.code, **e.extra})
+        except relay_link.RelayLinkError as e:
+            self._json(e.status, {"error": e.message, "code": e.code})
         except HttpError as e:
             self._json(e.status, {"error": str(e)})
         except Exception as e:  # noqa: BLE001
@@ -677,6 +692,10 @@ class Handler(BaseHTTPRequestHandler):
                 if p.startswith("/api/batches/") and p.endswith("/depart"):
                     bid = p.split("/")[3]
                     return self._json(200, depart_batch(db, bid, body or {}))
+                if p == "/api/relay-callback":
+                    status_code, resp, _replay = relay_link.receive_relay_callback(
+                        db, body or {})
+                    return self._json(status_code, resp)
                 if p == "/api/reset":
                     seed(db, reset=True)
                     # 清理已删除元数据的孤立分支数据库文件
@@ -697,6 +716,8 @@ class Handler(BaseHTTPRequestHandler):
             raise NotFound("未知接口")
         except branches_mod.BranchError as e:
             self._json(e.status, {"error": str(e), "code": e.code, **e.extra})
+        except relay_link.RelayLinkError as e:
+            self._json(e.status, {"error": e.message, "code": e.code})
         except HttpError as e:
             self._json(e.status, {"error": str(e)})
         except ValueError as e:

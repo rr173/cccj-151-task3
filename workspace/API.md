@@ -128,3 +128,20 @@
 
 无可行解时，`unassigned[]` 按户给出具体阻断原因（封路、无障碍车不足、
 座位不足、某避难点剩余床位、户间竞争耗尽床位、道路时序瓶颈等）。
+
+## 离线车队回执中继对接面
+
+独立模块（[relay/](relay/)，端口 8090）经下列接口与本系统连接：
+
+- `GET /api/execution-packages?status=scheduled` — 可导出批次列表。
+- `GET /api/execution-package/v1/{batch_id}` — 不可变执行包
+  （`batch_ref`=批次 id，含摘要、车辆、目的地、路径、搭载家庭；
+  首次导出在 `execution_exports` 留车辆/目的地快照）。
+- `POST /api/relay-callback` — 中继按序转发的回执：
+  - 按 `idempotency_key` 幂等，重复调用返回首次响应（台账 `relay_callbacks`）；
+  - 批次不存在/已撤回 → `{"result":"rejected","reason":"batch_withdrawn"}`；
+  - 车辆相对导出快照被改派或已故障下线 → `vehicle_changed`；
+  - 目的地被改派或避难点已暂停 → `destination_changed`；
+  - 合法回执返回 `{"result":"ack"}`；`departed` 类联动既有离场承诺语义。
+
+中继自身 API（执行包导入、终端下载、批量回执、重试、审计）见 [relay/API.md](relay/API.md)。

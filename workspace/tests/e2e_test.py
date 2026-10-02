@@ -249,6 +249,55 @@ def main():
         check("任何批次路径都不含已关闭道路",
               all(not (set(b["route_edges"]) & closed) for b in pp["batches"]))
 
+        print("【11】离线中继对接面：执行包导出 + 回调幂等/终态拒绝")
+        # 恢复路况后重新规划发布，确保有 scheduled 批次可导出
+        for rc in closed:
+            req("POST", "/api/events", {"type": "road_open", "code": rc})
+        _, pe = req("POST", "/api/plan", {"name": "中继对接方案"})
+        if pe.get("feasible") and pe["batches"]:
+            req("POST", f"/api/plans/{pe['id']}/publish", {})
+        _, listing = req("GET", "/api/execution-packages?status=scheduled")
+        check("可导出已发布计划批次", len(listing["batches"]) >= 1,
+              str(len(listing["batches"])))
+        if listing["batches"]:
+            bx = listing["batches"][0]
+            _, pkg = req("GET", f"/api/execution-package/v1/{bx['id']}")
+            check("执行包 batch_ref/摘要/车辆/目的地/items 完整",
+                  pkg["batch_ref"] == bx["id"] and pkg["batch_summary"]
+                  and pkg["vehicle"]["code"] and pkg["destination"]["code"]
+                  and isinstance(pkg["items"], list))
+            # 回调幂等
+            cb = {"idempotency_key": f"e2e:{bx['id']}:1", "batch_ref": bx["id"],
+                  "seq": 1, "receipt_no": "E2E-R1", "type": "failed_to_depart"}
+            _, a1 = req("POST", "/api/relay-callback", cb)
+            _, a2 = req("POST", "/api/relay-callback", cb)
+            check("回调首次 ack", a1["result"] == "ack")
+            check("相同幂等键重放返回首次响应",
+                  a2.get("idempotent_replay") is True and a2["result"] == "ack")
+            # 车辆故障 → 批次撤回 → 回执终态拒绝
+            _, st = req("GET", "/api/state")
+            scheduled = [b for b in st["batches"] if b["status"] == "scheduled"]
+            if scheduled:
+                by = scheduled[0]
+                req("POST", "/api/events",
+                    {"type": "vehicle_down", "code": by["vehicle"]})
+                _, rej = req("POST", "/api/relay-callback", {
+                    "idempotency_key": f"e2e:{by['id']}:9", "batch_ref": by["id"],
+                    "seq": 9, "receipt_no": "E2E-R9", "type": "departed"})
+                check("撤回批次回执被终态拒绝",
+                      rej["result"] == "rejected"
+                      and rej["reason"] == "batch_withdrawn")
+            # 不存在批次 → batch_withdrawn
+            _, rej2 = req("POST", "/api/relay-callback", {
+                "idempotency_key": "e2e:nope:1", "batch_ref": "B-NONEXISTENT",
+                "seq": 1, "receipt_no": "X", "type": "arrived"})
+            check("未知批次回执被终态拒绝",
+                  rej2["reason"] == "batch_withdrawn")
+        # 缺少幂等键 → 400
+        req("POST", "/api/relay-callback",
+            {"batch_ref": "x", "type": "arrived"}, expect=400)
+        check("缺少 idempotency_key 返回 400", True)
+
     finally:
         proc.send_signal(signal.SIGTERM)
         try:

@@ -65,6 +65,20 @@ python3 seed_demo.py --reset
    恢复道路/车辆/避难点后方案重新可行。
 7. 重启服务（或重启容器），刷新页面：命令、出发记录、剩余容量全部恢复。
 
+## 离线车队回执中继（独立模块）
+
+[relay/](relay/) 是与本系统通过**出站执行包 + 回调接口**相连的独立服务
+（端口 8090，独立数据库/容器）：不可变批次包供现场终端下载，接收带批次摘要、
+回执编号与递增序号的「已离场/未能出发/到达确认」回执，在乱序、重复、断网下
+保证按序、恰好一次回调。
+
+- 主系统对接面：`GET /api/execution-packages`、
+  `GET /api/execution-package/v1/{batch_id}`、`POST /api/relay-callback`
+  （幂等；批次撤回/车辆或目的地变化返回终态拒绝，见 [backend/relay_link.py](backend/relay_link.py)）。
+- 启动：`cd relay && docker compose up -d --build`（同时拉起主系统与中继）
+  或 `cd relay && ./run.sh`（桩适配器离线演示）。
+- 详见 [relay/README.md](relay/README.md) 与 [relay/API.md](relay/API.md)。
+
 ## 页面
 
 - **作战地图**：SVG 可点击地图，道路点按即封闭/恢复，批次路线按波次着色
@@ -98,10 +112,11 @@ python3 seed_demo.py --reset
 
 ```bash
 python3 tests/planner_test.py    # 规划器与诊断单元测试（14 项）
-python3 tests/e2e_test.py        # 起独立端口的端到端测试（41 项）：
+python3 tests/e2e_test.py        # 起独立端口的端到端测试（48 项）：
                                  # 幂等导入、全部硬约束、乐观并发、
                                  # 离场承诺、事件只影响未出发户、
-                                 # 不可行诊断、资源恢复、进程重启恢复
+                                 # 不可行诊断、资源恢复、进程重启恢复、
+                                 # 中继对接面（执行包导出/回调幂等/终态拒绝）
 python3 tests/branch_test.py     # 推演分支端到端测试（45 项）：
                                  # 创建/模拟幂等、物理隔离、并排差异、
                                  # 三方冲突/过期基线整体拒绝、

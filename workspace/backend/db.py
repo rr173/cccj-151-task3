@@ -151,6 +151,30 @@ CREATE TABLE IF NOT EXISTS sim_ops(
   ts         REAL NOT NULL,
   UNIQUE(scope, op_id)
 );
+
+-- ===================== 离线车队回执中继对接 =====================
+-- 中继回调的幂等台账：同一 idempotency_key 永远返回首次响应（中继安全重试/恰好一次）
+CREATE TABLE IF NOT EXISTS relay_callbacks(
+  id             INTEGER PRIMARY KEY AUTOINCREMENT,
+  idempotency_key TEXT NOT NULL UNIQUE,
+  batch_id       TEXT NOT NULL DEFAULT '',
+  seq            INTEGER,
+  receipt_no     TEXT NOT NULL DEFAULT '',
+  type           TEXT NOT NULL DEFAULT '',
+  response_json  TEXT NOT NULL,          -- 首次响应留痕（重放原样返回）
+  ts             REAL NOT NULL
+);
+
+-- 出站执行包导出快照（首次导出即不可变；回调据此识别车辆/目的地变化）
+CREATE TABLE IF NOT EXISTS execution_exports(
+  batch_id      TEXT PRIMARY KEY,
+  vehicle_code  TEXT NOT NULL,
+  shelter_code  TEXT NOT NULL,
+  vehicle_status TEXT NOT NULL DEFAULT '',
+  shelter_status TEXT NOT NULL DEFAULT '',
+  package_hash  TEXT NOT NULL DEFAULT '',
+  exported_at   REAL NOT NULL
+);
 """
 
 
