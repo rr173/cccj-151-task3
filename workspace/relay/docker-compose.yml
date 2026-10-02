@@ -1,0 +1,22 @@
+services:
+  relay:
+    build: .
+    image: offline-convoy-receipt-relay:latest
+    container_name: convoy-receipt-relay
+    ports:
+      - "8090:8090"
+    environment:
+      # 默认走进程内 HTTP 回调端点 /callbacks/relay-receipt（模拟主系统），
+      # 真实对接撤离编排系统时改为：
+      #   RELAY_ADAPTER=http
+      #   RELAY_MAIN_URL=http://<主系统地址>/api/relay/callbacks
+      RELAY_ADAPTER: http
+      RELAY_MAIN_URL: http://127.0.0.1:8090/callbacks/relay-receipt
+      RELAY_HTTP_TIMEOUT: "5"
+      RELAY_PUMP_INTERVAL: "2"
+    volumes:
+      - relay-data:/srv/relay/data
+    restart: unless-stopped
+
+volumes:
+  relay-data:

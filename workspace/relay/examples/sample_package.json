@@ -1,0 +1,38 @@
+{
+  "package_id": "EVAC-2026-10-02-01",
+  "summary": "北岭火线 第 2 波撤离令",
+  "issued_at": 1759400000,
+  "commander": "张指",
+  "batches": [
+    {
+      "batch_id": "B-N2-01",
+      "wave": 2,
+      "vehicle": "V3 大巴(无障碍)",
+      "origin": "G2 北岭村",
+      "destination": "S1 县体育馆",
+      "route": ["G2", "r2", "G1", "r1", "S1"],
+      "households": ["H-101", "H-102(轮椅)", "H-103"],
+      "expected_kinds": ["departed", "arrived"]
+    },
+    {
+      "batch_id": "B-N2-02",
+      "wave": 2,
+      "vehicle": "V5 中巴",
+      "origin": "G2 北岭村",
+      "destination": "S3 三中(可携宠)",
+      "route": ["G2", "r3", "S3"],
+      "households": ["H-104(2犬)", "H-105"],
+      "expected_kinds": ["departed", "arrived"]
+    },
+    {
+      "batch_id": "B-N2-03",
+      "wave": 2,
+      "vehicle": "V1 中巴",
+      "origin": "G4 东坡",
+      "destination": "S1 县体育馆",
+      "route": ["G4", "r5", "G1", "r1", "S1"],
+      "households": ["H-201", "H-202"],
+      "expected_kinds": ["departed", "not_departed", "arrived"]
+    }
+  ]
+}

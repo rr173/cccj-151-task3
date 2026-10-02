@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>离线车队回执中继</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<header class="topbar">
+  <div class="brand">
+    <span class="logo">🚛</span>
+    <div>
+      <h1>离线车队回执中继</h1>
+      <div class="sub">不可变批次包 · 乱序缓冲 · 顺序恰好一次转发 · 终态屏障 · 重启恢复</div>
+    </div>
+  </div>
+  <div class="hstatus">
+    <span id="adapterBadge" class="badge">适配器：…</span>
+    <button id="refreshBtn" class="btn small">立即刷新</button>
+    <label class="auto"><input type="checkbox" id="autoRefresh" checked> 自动刷新(3s)</label>
+  </div>
+</header>
+
+<nav class="tabs">
+  <button class="tab active" data-tab="packages">① 执行包与批次</button>
+  <button class="tab" data-tab="terminal">② 现场终端（下载/上传）</button>
+  <button class="tab" data-tab="queue">③ 队列·缺口·重试</button>
+  <button class="tab" data-tab="audit">④ 审计</button>
+  <button class="tab mocktab" data-tab="mock">🧪 模拟主系统</button>
+</nav>
+
+<main>
+  <!-- ================= 执行包与批次 ================= -->
+  <section id="tab-packages" class="tabpane active">
+    <div class="grid2">
+      <div class="card">
+        <h2>导入出站执行包</h2>
+        <p class="hint">撤离编排系统导出的执行包 JSON。相同 <code>package_id</code> 与内容再次导入
+          返回首次结果；同 <code>package_id</code> 内容不同将被拒绝（不可变）。</p>
+        <div class="row">
+          <button class="btn" id="loadSampleBtn">载入示例执行包</button>
+          <input type="file" id="pkgFile" accept=".json,application/json">
+        </div>
+        <textarea id="pkgInput" rows="14" spellcheck="false"
+          placeholder='{"package_id":"EVAC-2026-10-02-01","summary":"…","batches":[…]}'></textarea>
+        <div class="row right">
+          <span id="importMsg" class="msg"></span>
+          <button class="btn primary" id="importBtn">导入执行包</button>
+        </div>
+      </div>
+      <div class="card">
+        <h2>批次概览</h2>
+        <div id="packageList" class="list"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= 现场终端 ================= -->
+  <section id="tab-terminal" class="tabpane">
+    <div class="grid2">
+      <div class="card">
+        <h2>终端下载（不可变批次包）</h2>
+        <p class="hint">现场终端选择执行包下载；原始 JSON 与批次摘要指纹原样返回。
+          上传回执时必须携带 <code>batch_summary</code>。</p>
+        <div class="row">
+          <select id="dlPackage"></select>
+          <button class="btn" id="downloadBtn">下载执行包</button>
+        </div>
+        <pre id="downloadOut" class="codebox">尚未下载</pre>
+      </div>
+      <div class="card">
+        <h2>批量回执上传</h2>
+        <p class="hint">三种类型：<b>已离场 departed</b> / <b>未能出发 not_departed</b> /
+          <b>到达确认 arrived</b>。乱序、重复都可安全提交；同序号或同回执编号内容不同将被拒绝。</p>
+        <div class="row wrap">
+          <select id="rcptBatch"></select>
+          <input type="number" id="rcptSeq" placeholder="序号 seq" min="1" style="width:110px">
+          <select id="rcptKind">
+            <option value="departed">已离场 departed</option>
+            <option value="not_departed">未能出发 not_departed</option>
+            <option value="arrived">到达确认 arrived</option>
+          </select>
+          <input type="text" id="rcptNo" placeholder="回执编号 receipt_no" style="width:200px">
+          <input type="text" id="rcptDetail" placeholder="细节（里程/原因/耗时，可选 JSON）" style="flex:1;min-width:220px">
+        </div>
+        <div class="row wrap">
+          <button class="btn" id="addRcptBtn">加入待传清单</button>
+          <button class="btn" id="fillGapDemoBtn" title="先传 2 和 3，演示序号 1 的缺口缓冲">演示：乱序(2,3)</button>
+          <button class="btn" id="fillSeq1Btn">补传序号 1（补齐缺口）</button>
+        </div>
+        <h3>待传清单</h3>
+        <pre id="bulkDraft" class="codebox small">[]</pre>
+        <div class="row right">
+          <span id="bulkMsg" class="msg"></span>
+          <button class="btn primary" id="bulkSendBtn">批量上传</button>
+        </div>
+        <div id="bulkResult"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= 队列/重试 ================= -->
+  <section id="tab-queue" class="tabpane">
+    <div class="card">
+      <h2>转发队列总览 <button class="btn small" id="retryAllBtn">全部安全重试</button></h2>
+      <div id="queueOverview" class="list"></div>
+    </div>
+    <div class="card">
+      <h2>批次详情：缺口 / 缓冲项 / 转发结果 / 失败原因</h2>
+      <div class="row"><select id="detailBatch" style="max-width:420px"></select>
+        <button class="btn" id="retryBatchBtn">重试该批次</button></div>
+      <div id="batchDetail"></div>
+    </div>
+  </section>
+
+  <!-- ================= 审计 ================= -->
+  <section id="tab-audit" class="tabpane">
+    <div class="card">
+      <h2>审计流</h2>
+      <table class="table">
+        <thead><tr><th>时间</th><th>动作</th><th>执行包</th><th>批次</th><th>序号</th><th>详情</th></tr></thead>
+        <tbody id="auditBody"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- ================= 模拟主系统 ================= -->
+  <section id="tab-mock" class="tabpane">
+    <div class="grid2">
+      <div class="card">
+        <h2>配置主系统回调行为（仅 mock）</h2>
+        <p class="hint">
+          注入瞬时故障（超时/5xx，计数耗尽后成功，可验证安全重试与恰好一次）；<br>
+          注入终态拒绝（批次已撤回 / 车辆已变化 / 目的地已变化），验证屏障：
+          后续回执无法越过该序号。</p>
+        <div class="row wrap">
+          <select id="mockBatch"></select>
+          <input type="number" id="mockTransient" min="0" placeholder="前 n 次回调超时/5xx" style="width:180px">
+          <input type="number" id="mockTermSeq" min="1" placeholder="在序号…终态拒绝" style="width:150px">
+          <select id="mockTermReason">
+            <option value="withdrawn">批次已撤回</option>
+            <option value="vehicle_changed">车辆已变化</option>
+            <option value="destination_changed">目的地已变化</option>
+          </select>
+        </div>
+        <div class="row">
+          <button class="btn primary" id="mockApplyBtn">应用配置</button>
+          <button class="btn danger" id="mockResetBtn">重置模拟主系统（清空受理记录）</button>
+        </div>
+        <h3>原始 JSON 配置（高级）</h3>
+        <textarea id="mockJson" rows="6" spellcheck="false"
+          placeholder='{"transient_times":{"B001":2},"terminal":{"B001:1":"vehicle_changed"},"latency":0}'></textarea>
+        <div class="row right"><button class="btn" id="mockJsonBtn">按 JSON 应用</button></div>
+      </div>
+      <div class="card">
+        <h2>主系统受理情况（恰好一次证据）</h2>
+        <div id="mockState"></div>
+      </div>
+    </div>
+  </section>
+</main>
+
+<div id="toast" class="toast"></div>
+<script src="app.js"></script>
+</body>
+</html>
